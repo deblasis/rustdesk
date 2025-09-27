@@ -1,5 +1,6 @@
 import 'package:flutter_hbb/consts.dart';
-
+import 'package:flutter_hbb/common.dart'; // for SessionID typedef
+import 'package:flutter_hbb/models/platform_model.dart'; // for bind
 import 'package:flutter_hbb/generated_bridge.dart'
     if (dart.library.html) 'package:flutter_hbb/web/bridge.dart';
 
@@ -20,14 +21,14 @@ int parseCustomScalePercent(String? s, {int defaultPercent = 100}) {
 double percentToScale(int percent) => clampCustomScalePercent(percent) / 100.0;
 
 /// Fetch, parse and clamp the custom scale percent for a session.
-Future<int> getSessionCustomScalePercent(UuidValue sessionId) async {
+Future<int> getSessionCustomScalePercent(SessionID sessionId) async {
   final opt = await bind.sessionGetFlutterOption(
       sessionId: sessionId, k: kCustomScalePercentKey);
   return parseCustomScalePercent(opt);
 }
 
 /// Fetch and compute the custom scale factor for a session.
-Future<double> getSessionCustomScale(UuidValue sessionId) async {
+Future<double> getSessionCustomScale(SessionID sessionId) async {
   final p = await getSessionCustomScalePercent(sessionId);
   return percentToScale(p);
 }

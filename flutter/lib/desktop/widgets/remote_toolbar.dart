@@ -1319,6 +1319,26 @@ class _CustomScaleMenuControlsState extends State<_CustomScaleMenuControls> {
   late int _value;
   late final Debouncer<int> _debouncerScale;
 
+  // Dynamic range split with hysteresis:
+  // - lower range when <= 100  → [5, 101]
+  // - upper range when > 100   → [100, 1000]
+  static const int _lowerMin = 5;
+  static const int _lowerMax = 101;
+  static const int _upperMin = 100;
+  static const int _upperMax = 1000;
+
+  bool _upperRange = false; // true when controlling [100..1000]
+
+  // Clamp helper for local use
+  int _clamp(int v) => clampCustomScalePercent(v);
+
+  // Decide which range we are in, with hysteresis.
+  bool _shouldUseUpperRangeFor(int percent) {
+    // Move to upper when >= 101, move to lower when <= 100
+    if (_upperRange) return percent > _upperMin; // stay upper until <= 100
+    return percent >= _lowerMax; // flip to upper at 101
+  }
+
   @override
   void initState() {
     super.initState();
@@ -1337,6 +1357,7 @@ class _CustomScaleMenuControlsState extends State<_CustomScaleMenuControls> {
       v = clampCustomScalePercent(v);
       setState(() {
         _value = v;
+        _upperRange = _shouldUseUpperRangeFor(v);
       });
     });
   }
@@ -1370,8 +1391,12 @@ class _CustomScaleMenuControlsState extends State<_CustomScaleMenuControls> {
 
   void _nudge(int delta) {
     final next = _clamp(_value + delta);
+    final nextUpper = _shouldUseUpperRangeFor(next);
     setState(() {
       _value = next;
+      if (nextUpper != _upperRange) {
+        _upperRange = nextUpper;
+      }
     });
     widget.onChanged?.call(next);
     _debouncerScale.value = next;
@@ -1398,28 +1423,47 @@ class _CustomScaleMenuControlsState extends State<_CustomScaleMenuControls> {
           overlayColor: colorScheme.primary.withOpacity(0.1),
           showValueIndicator: ShowValueIndicator.never,
           thumbShape: _RectValueThumbShape(
-            min: 5,
-            max: 1000,
+            min: (_upperRange ? _upperMin : _lowerMin).toDouble(),
+            max: (_upperRange ? _upperMax : _lowerMax).toDouble(),
             width: 52,
             height: 24,
             radius: 4,
           ),
         ),
-        child: Slider(
-          value: _value.toDouble(),
-          min: 5,
-          max: 1000,
-          divisions: 995,
-          onChanged: (v) {
-            final next = _clamp(v.round());
-            if (next != _value) {
-              setState(() {
-                _value = next;
-              });
-              widget.onChanged?.call(next);
-              _debouncerScale.value = next;
-            }
-          },
+        child: AnimatedSwitcher(
+          duration: const Duration(milliseconds: 150),
+          switchInCurve: Curves.easeOut,
+          switchOutCurve: Curves.easeIn,
+          layoutBuilder: (currentChild, previousChildren) =>
+              Stack(alignment: Alignment.center, children: [
+                ...previousChildren,
+                if (currentChild != null) currentChild,
+              ]),
+          child: Slider(
+            key: ValueKey(_upperRange), // triggers cross-fade on range flip
+            value: _value.toDouble(),
+            min: (_upperRange ? _upperMin : _lowerMin).toDouble(),
+            max: (_upperRange ? _upperMax : _lowerMax).toDouble(),
+            // 1 step per percent in the active range
+            divisions: (_upperRange
+                    ? (_upperMax - _upperMin)
+                    : (_lowerMax - _lowerMin))
+                .clamp(1, 5000),
+            onChanged: (v) {
+              final next = _clamp(v.round());
+              if (next != _value) {
+                final nextUpper = _shouldUseUpperRangeFor(next);
+                setState(() {
+                  _value = next;
+                  if (nextUpper != _upperRange) {
+                    _upperRange = nextUpper;
+                  }
+                });
+                widget.onChanged?.call(next);
+                _debouncerScale.value = next;
+              }
+            },
+          ),
         ),
       ),
     );
